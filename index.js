@@ -1,6 +1,7 @@
 'use strict';
 
 const refs = {
+  activity: document.querySelector('.activity'),
   grid: document.querySelector('.grid'),
   startButton: document.querySelector('#start'),
   replayButton: document.querySelector('#replay'),
@@ -20,32 +21,32 @@ const createDoubleUniqueArray = length => {
 
 class MatchGrid {
   constructor({ width, height, cols, rows, timeLimit, theme }) {
-    // 
     this.width = width;
     this.height = height;
     this.cols = cols;
     this.rows = rows;
     this.timeLimit = timeLimit;
     this.theme = theme;
-    //
+
+    this.activity = refs.activity;
     this.grid = refs.grid;
     this.startButton = refs.startButton;
     this.replayButton = refs.replayButton;
     this.pauseButton = refs.pauseButton;
     this.timerElement = refs.timerElement;
-    //
+
     this.cards = [];
     this.gridLength = cols * rows;
-    //
+
     this.items = [];
     this.flippedItems = [];
     this.matchedItems = [];
     this.timer = null;
-    this.timeLeft = timeLimit;
-    //
+    this.timeLeft = this.timeLimit;
+
     this.isPaused = false;
     this.isGameOver = false;
-    //
+
     this.init();
   }
 
@@ -71,20 +72,39 @@ class MatchGrid {
       item.value = element;
       this.grid.appendChild(item);
       this.items.push(item);
-    }``
+    }
   }
 
   addListeners() {
     this.startButton.addEventListener('click', () => this.startGame());
     this.replayButton.addEventListener('click', () => this.replayGame());
     this.pauseButton.addEventListener('click', () => this.pauseGame());
-    this.grid.addEventListener('click', event => this.flipItem(event.target));
   }
 
   startGame() {
+    this.startButton.disabled = true;
+    this.pauseButton.disabled = false;
+
     this.timerElement.innerText = `Time left: ${this.timeLeft}`;
-    
+
+    this.shuffleItems();
+
     this.timer = setInterval(() => this.updateTimer(), 1000);
+
+    this.grid.addEventListener('click', event => this.flipItem(event.target));
+    document.addEventListener('mouseout', event => {
+      const bounds = this.activity.getBoundingClientRect();
+      if (
+        event.clientX < bounds.left ||
+        event.clientX > bounds.right ||
+        event.clientY < bounds.top ||
+        event.clientY > bounds.bottom
+      ) {
+        if (!this.isPaused && !this.isGameOver) {
+          this.pauseGame();
+        }
+      }
+    });
   }
 
   replayGame() {
@@ -95,10 +115,17 @@ class MatchGrid {
   pauseGame() {
     this.isPaused = !this.isPaused;
     this.pauseButton.innerText = this.isPaused ? 'Resume' : 'Pause';
+
+    this.isPaused
+      ? this.pauseButton.classList.add('alert')
+      : this.pauseButton.classList.remove('alert');
   }
 
   flipItem(item) {
     if (item.nodeName !== 'LI') {
+      return;
+    }
+    if (item.value === undefined) {
       return;
     }
     if (
@@ -113,10 +140,39 @@ class MatchGrid {
       item.innerText = item.value;
       item.classList.add('flipped');
       this.flippedItems.push(item);
+      anime({
+        targets: item,
+        translateY: ['-15', '0'],
+        opacity: ['0', '1'],
+        easing: 'easeInOutSine',
+        duration: 223,
+        complete: function (anim) {
+          anim.playing = false;
+        },
+      });
 
       if (this.flippedItems.length === 2) {
         this.checkMatch();
       }
+    }
+    if (this.flippedItems.length > 2) {
+      this.flippedItems = [];
+      item.innerText = '';
+      item.classList.remove('flipped');
+      item.classList.add('timeout');
+      anime({
+        targets: item,
+        translateY: ['0', '0'],
+        opacity: ['1', '1'],
+        easing: 'easeInOutSine',
+        complete: function (anim) {
+          anim.playing = false;
+        },
+      });
+      setTimeout(() => {
+        item.innerText = '?';
+        item.classList.remove('timeout', 'flipped');
+      }, 523);
     }
   }
 
@@ -132,6 +188,16 @@ class MatchGrid {
         this.flippedItems = [];
 
         if (this.matchedItems.length === this.items.length) {
+          anime({
+            targets: '.item',
+            translateY: ['0', '0'],
+            opacity: ['0', '1'],
+            easing: 'easeInOutSine',
+            duration: 0,
+            complete: function (anim) {
+              anim.playing = false;
+            },
+          });
           this.endGame(true);
         }
       } else {
@@ -141,12 +207,31 @@ class MatchGrid {
           item1.classList.remove('flipped');
           item2.classList.remove('flipped');
           this.flippedItems = [];
+          anime({
+            targets: (item1, item2),
+            translateY: ['0', '0'],
+            opacity: ['0', '1'],
+            easing: 'easeInOutSine',
+            duration: 223,
+            complete: function (anim) {
+              anim.playing = false;
+            },
+          });
         }, 669);
       }
     }
   }
 
-  shuffle() {}
+  shuffleItems() {
+    for (let i = this.items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.items[i], this.items[j]] = [this.items[j], this.items[i]];
+    }
+
+    this.items.forEach((item, index) => {
+      item.style.order = index;
+    });
+  }
 
   updateTimer() {
     if (!this.isPaused && !this.isGameOver) {
@@ -160,14 +245,53 @@ class MatchGrid {
   }
 
   endGame(isWin) {
-    this.isGameOver = true;
     clearInterval(this.timer);
+    this.isGameOver = true;
 
     if (isWin) {
-      alert('You win!')
+      this.timerElement.innerText = 'You win!';
+      anime({
+        targets: '.grid .item',
+        scale: [
+          { value: 0.1, easing: 'easeOutSine', duration: 500 },
+          { value: 1, easing: 'easeInOutQuad', duration: 1200 },
+        ],
+        delay: anime.stagger(223, {
+          grid: [this.rows, this.cols],
+          from: 'center',
+        }),
+      });
     } else {
-      alert('Time is up!')
+      this.timerElement.innerText = 'Time is up!';
+
+      this.items.forEach(item => {
+        if (
+          item.classList.contains('matched') &&
+          item.classList.contains('flipped')
+        ) {
+          return;
+        }
+        item.classList.add('timeout');
+        setTimeout(() => {
+          item.innerText = item.value;
+        }, 669);
+      });
+
+      anime({
+        targets: '.grid .item',
+        scale: [
+          { value: 0.1, easing: 'easeOutSine', duration: 500 },
+          { value: 1, easing: 'easeInOutQuad', duration: 1200 },
+        ],
+        delay: anime.stagger(0, {
+          grid: [this.rows, this.cols],
+          from: 'center',
+        }),
+      });
     }
+
+    this.replayButton.disabled = false;
+    this.pauseButton.disabled = true;
   }
 
   resetGame() {
@@ -180,22 +304,25 @@ class MatchGrid {
 
     this.items.forEach(item => {
       item.innerText = '?';
-      item.classList.remove('flipped', 'matched');
+      item.classList.remove('flipped', 'matched', 'timeout');
     });
 
     this.timerElement.innerText = 'Time left: 0';
+
+    this.replayButton.disabled = true;
+    this.pauseButton.disabled = true;
     this.pauseButton.innerText = 'Pause';
-    this.grid.removeEventListener('click', event =>
-      this.flipItem(event.target),
-    );
+
+    this.flippedItems = [];
+    this.matchedItems = [];
   }
 }
 
 new MatchGrid({
   width: 400,
   height: 400,
-  cols: 4,
+  cols: 3,
   rows: 4,
-  timeLimit: 60,
+  timeLimit: 10,
   theme: { colors: ['#4CAF50', '#2196F3'] },
 });
